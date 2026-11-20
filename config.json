@@ -33,11 +33,10 @@
     ],
     "4_finger_up": [
         "win",
-        "shift",
-        "m"
+        "tab"
     ],
     "4_finger_down": [
         "win",
-        "m"
+        "d"
     ]
 }

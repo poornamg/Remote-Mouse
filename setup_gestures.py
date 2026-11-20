@@ -10,8 +10,8 @@ DEFAULT_CONFIG = {
     "3_finger_left": ["alt", "shift", "tab"],
     "3_finger_right": ["alt", "tab"],
     "4_finger_tap": ["win", "a"],
-    "4_finger_up": ["win", "shift", "m"],
-    "4_finger_down": ["win", "m"],
+    "4_finger_up": ["win", "tab"],
+    "4_finger_down": ["win", "d"],
     "4_finger_left": ["win", "ctrl", "right"],
     "4_finger_right": ["win", "ctrl", "left"]
 }

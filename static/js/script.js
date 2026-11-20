@@ -115,63 +115,170 @@ kbd.addEventListener('keydown', (e) => {
 // --- WINDOWS GESTURE ENGINE ---
 const sensitivity = 2.5; 
 const scrollSens = 35;
+const volumeThreshold = 18; // Pixels per volume tick (low threshold = smooth, responsive volume slider)
+const appSwitchStepThreshold = 35; // Pixels required to move to next/prev app in App Switcher
+const fourFingerThreshold = 40; // Pixels required to trigger 4-finger discrete swipe
 
 let initialTouches = [];
 let maxFingers = 0;
-let isMoving = false;
 let touchStartTime = 0;
 let lastTapTime = 0;
 
+let startX = 0, startY = 0;
 let lastX = 0, lastY = 0;
+
+// Gesture state tracking
+let gestureAxis = null; // null | 'vertical' | 'horizontal'
+let gestureFired = false; // For discrete swipes (4-finger gestures)
+let isAltTabActive = false; // True while 3-finger horizontal App Switcher is visible
+let swipeAccX = 0, swipeAccY = 0;
 
 touchpad.addEventListener('touchstart', (e) => {
     touchStartTime = Date.now();
-    isMoving = false;
+    gestureAxis = null;
+    gestureFired = false;
+    swipeAccX = 0;
+    swipeAccY = 0;
     
     if (e.touches.length > maxFingers) {
         maxFingers = e.touches.length;
         initialTouches = Array.from(e.touches).map(t => ({x: t.clientX, y: t.clientY}));
     }
 
-    lastX = e.touches[0].clientX;
-    lastY = e.touches[0].clientY;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    lastX = startX;
+    lastY = startY;
 });
 
 touchpad.addEventListener('touchmove', (e) => {
     e.preventDefault(); 
-    isMoving = true;
     
     let cx = e.touches[0].clientX;
     let cy = e.touches[0].clientY;
+    let dx = cx - lastX;
+    let dy = cy - lastY;
 
     if (maxFingers === 1) {
         // Pointer Movement
-        socket.emit('move', {dx: (cx - lastX) * sensitivity, dy: (cy - lastY) * sensitivity});
+        socket.emit('move', {dx: dx * sensitivity, dy: dy * sensitivity});
     } else if (maxFingers === 2) {
         // Two Finger Scroll
-        let dy = (lastY - cy); 
-        // Inverted scrolling direction (-dy)
-        if (Math.abs(dy) > 1) { socket.emit('scroll', {dy: -dy * scrollSens}); }
+        if (Math.abs(dy) > 1) { 
+            socket.emit('scroll', {dy: -dy * scrollSens}); 
+        }
+    } else if (maxFingers === 3) {
+        // 3-Finger Gestures (Continuous volume & Visual App Switcher)
+        
+        // 1. Determine and lock axis to prevent cross-talk (e.g. volume changing while switching apps)
+        if (!gestureAxis) {
+            swipeAccX += dx;
+            swipeAccY += dy;
+            let absX = Math.abs(swipeAccX);
+            let absY = Math.abs(swipeAccY);
+            
+            if (absX > 12 || absY > 12) {
+                if (absY >= absX) {
+                    gestureAxis = 'vertical'; // Volume control mode
+                    swipeAccX = 0;
+                } else {
+                    gestureAxis = 'horizontal'; // App switcher mode
+                    swipeAccY = 0;
+                }
+            }
+        }
+        
+        // 2. Locked to VERTICAL: VOLUME SLIDER ONLY
+        if (gestureAxis === 'vertical') {
+            swipeAccY += dy;
+            swipeAccX = 0; // Strictly zero out any horizontal movement so windows never switch!
+            
+            if (swipeAccY < -volumeThreshold) {
+                socket.emit('gesture', {action: '3_finger_up'});
+                swipeAccY = 0;
+                gestureFired = true;
+            } else if (swipeAccY > volumeThreshold) {
+                socket.emit('gesture', {action: '3_finger_down'});
+                swipeAccY = 0;
+                gestureFired = true;
+            }
+        }
+        
+        // 3. Locked to HORIZONTAL: APP SWITCHER OVERLAY
+        else if (gestureAxis === 'horizontal') {
+            swipeAccX += dx;
+            swipeAccY = 0; // Strictly zero out vertical movement
+            
+            if (!isAltTabActive) {
+                if (swipeAccX > 20) {
+                    socket.emit('alt_tab_start', {dir: 'right'});
+                    isAltTabActive = true;
+                    gestureFired = true;
+                    swipeAccX = 0;
+                } else if (swipeAccX < -20) {
+                    socket.emit('alt_tab_start', {dir: 'left'});
+                    isAltTabActive = true;
+                    gestureFired = true;
+                    swipeAccX = 0;
+                }
+            } else {
+                if (swipeAccX > appSwitchStepThreshold) {
+                    socket.emit('alt_tab_step', {dir: 'right'});
+                    swipeAccX = 0;
+                } else if (swipeAccX < -appSwitchStepThreshold) {
+                    socket.emit('alt_tab_step', {dir: 'left'});
+                    swipeAccX = 0;
+                }
+            }
+        }
+    } else if (maxFingers === 4) {
+        // 4-Finger Gestures (Discrete: fire ONCE per swipe gesture)
+        if (!gestureFired) {
+            swipeAccX += dx;
+            swipeAccY += dy;
+            let absX = Math.abs(swipeAccX);
+            let absY = Math.abs(swipeAccY);
+            
+            if (absX > fourFingerThreshold || absY > fourFingerThreshold) {
+                if (absY >= absX) {
+                    if (swipeAccY < 0) {
+                        socket.emit('gesture', {action: '4_finger_up'}); // Multitasking view (Win + Tab)
+                    } else {
+                        socket.emit('gesture', {action: '4_finger_down'}); // Show desktop (Win + D)
+                    }
+                } else {
+                    if (swipeAccX < 0) {
+                        socket.emit('gesture', {action: '4_finger_left'}); // Switch desktop
+                    } else {
+                        socket.emit('gesture', {action: '4_finger_right'}); // Switch desktop
+                    }
+                }
+                gestureFired = true;
+            }
+        }
     }
     
     lastX = cx; lastY = cy;
 });
 
 touchpad.addEventListener('touchend', (e) => {
-    let touchDuration = Date.now() - touchStartTime;
-    
-    // Only process gesture when all fingers are lifted
+    // Commit selection in App Switcher when fingers are lifted
+    if (isAltTabActive && e.touches.length === 0) {
+        socket.emit('alt_tab_end');
+        isAltTabActive = false;
+    }
+
+    // Only process Taps when all fingers are lifted
     if (e.touches.length === 0) {
+        let touchDuration = Date.now() - touchStartTime;
         let endX = e.changedTouches[0].clientX;
         let endY = e.changedTouches[0].clientY;
-        let diffX = endX - initialTouches[0].x;
-        let diffY = endY - initialTouches[0].y;
-        let absX = Math.abs(diffX);
-        let absY = Math.abs(diffY);
-        let isSwipe = absX > 40 || absY > 40;
+        let totalDist = Math.hypot(endX - startX, endY - startY);
 
-        if (!isMoving || touchDuration < 200) {
-            // TAPS & CLICKS
+        // Tap detected: No swipe fired, minimal travel distance (< 25px), and quick tap (< 350ms)
+        let isTap = !gestureFired && !isAltTabActive && totalDist < 25 && touchDuration < 350;
+
+        if (isTap) {
             if (maxFingers === 1) {
                 let rect = touchpad.getBoundingClientRect();
                 let isBottom = endY > rect.height * 0.7; // Bottom 30% of screen
@@ -192,33 +299,31 @@ touchpad.addEventListener('touchend', (e) => {
             } else if (maxFingers === 2) {
                 socket.emit('click', {button: 'right'});
             } else if (maxFingers === 3) {
-                socket.emit('gesture', {action: '3_finger_tap'});
+                socket.emit('gesture', {action: '3_finger_tap'}); // Play / Pause
             } else if (maxFingers === 4) {
-                socket.emit('gesture', {action: '4_finger_tap'});
-            }
-        } else if (isSwipe) {
-            // SWIPES
-            if (maxFingers === 3) {
-                if (absY > absX) {
-                    if (diffY < 0) socket.emit('gesture', {action: '3_finger_up'}); 
-                    else socket.emit('gesture', {action: '3_finger_down'}); 
-                } else {
-                    if (diffX < 0) socket.emit('gesture', {action: '3_finger_left'}); 
-                    else socket.emit('gesture', {action: '3_finger_right'});
-                }
-            } else if (maxFingers === 4) {
-                if (absY > absX) {
-                    if (diffY < 0) socket.emit('gesture', {action: '4_finger_up'}); 
-                    else socket.emit('gesture', {action: '4_finger_down'}); 
-                } else {
-                    if (diffX < 0) socket.emit('gesture', {action: '4_finger_left'}); 
-                    else socket.emit('gesture', {action: '4_finger_right'});
-                }
+                socket.emit('gesture', {action: '4_finger_tap'}); // Win + A (Action Center)
             }
         }
         
         // Reset states
         maxFingers = 0;
+        gestureAxis = null;
+        gestureFired = false;
         initialTouches = [];
+        swipeAccX = 0;
+        swipeAccY = 0;
     }
+});
+
+touchpad.addEventListener('touchcancel', () => {
+    if (isAltTabActive) {
+        socket.emit('alt_tab_end');
+        isAltTabActive = false;
+    }
+    maxFingers = 0;
+    gestureAxis = null;
+    gestureFired = false;
+    initialTouches = [];
+    swipeAccX = 0;
+    swipeAccY = 0;
 });
