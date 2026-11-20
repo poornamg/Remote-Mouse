@@ -1,19 +1,23 @@
 const socket = io();
 
-// Wake Lock API
+// Wake Lock API (prevents phone screen from turning off)
 let wakeLock = null;
 async function requestWakeLock() {
     try {
         if ('wakeLock' in navigator) {
             wakeLock = await navigator.wakeLock.request('screen');
         }
-    } catch (err) {}
+    } catch (err) {
+        console.log('Wake Lock error:', err);
+    }
 }
 document.addEventListener('visibilitychange', async () => {
-    if (wakeLock !== null && document.visibilityState === 'visible') { await requestWakeLock(); }
+    if (wakeLock !== null && document.visibilityState === 'visible') { 
+        await requestWakeLock(); 
+    }
 });
 
-// Block Back Button
+// Block Back Button (keeps user in the app)
 history.pushState(null, null, location.href);
 window.addEventListener('popstate', function () {
     history.pushState(null, null, location.href);
@@ -34,7 +38,7 @@ startBtn.addEventListener('click', async () => {
         await requestWakeLock();
         try {
             await screen.orientation.lock('landscape');
-        } catch (e) {}
+        } catch (e) {} // Ignore if device blocks orientation lock
     } catch(e) {}
     overlay.classList.add('hidden');
 });
@@ -102,7 +106,7 @@ window.sendKey = function(key) {
 const kbd = document.getElementById('keyboardInput');
 kbd.addEventListener('input', (e) => {
     if (e.inputType === 'insertText') { socket.emit('key_press', {key: e.data}); }
-    kbd.value = '';
+    kbd.value = ''; // Keep field clear
 });
 kbd.addEventListener('keydown', (e) => {
     if (e.key === 'Backspace' || e.key === 'Enter') { socket.emit('key_press', {key: e.key}); }
@@ -141,9 +145,12 @@ touchpad.addEventListener('touchmove', (e) => {
     let cy = e.touches[0].clientY;
 
     if (maxFingers === 1) {
+        // Pointer Movement
         socket.emit('move', {dx: (cx - lastX) * sensitivity, dy: (cy - lastY) * sensitivity});
     } else if (maxFingers === 2) {
+        // Two Finger Scroll
         let dy = (lastY - cy); 
+        // Inverted scrolling direction (-dy)
         if (Math.abs(dy) > 1) { socket.emit('scroll', {dy: -dy * scrollSens}); }
     }
     
@@ -153,6 +160,7 @@ touchpad.addEventListener('touchmove', (e) => {
 touchpad.addEventListener('touchend', (e) => {
     let touchDuration = Date.now() - touchStartTime;
     
+    // Only process gesture when all fingers are lifted
     if (e.touches.length === 0) {
         let endX = e.changedTouches[0].clientX;
         let endY = e.changedTouches[0].clientY;
@@ -163,9 +171,10 @@ touchpad.addEventListener('touchend', (e) => {
         let isSwipe = absX > 40 || absY > 40;
 
         if (!isMoving || touchDuration < 200) {
+            // TAPS & CLICKS
             if (maxFingers === 1) {
                 let rect = touchpad.getBoundingClientRect();
-                let isBottom = endY > rect.height * 0.7;
+                let isBottom = endY > rect.height * 0.7; // Bottom 30% of screen
                 
                 if (isBottom && endX < rect.width * 0.3) {
                     socket.emit('click', {button: 'left'});
@@ -183,23 +192,32 @@ touchpad.addEventListener('touchend', (e) => {
             } else if (maxFingers === 2) {
                 socket.emit('click', {button: 'right'});
             } else if (maxFingers === 3) {
-                socket.emit('hotkey', {keys: ['win', 's']});
+                socket.emit('gesture', {action: '3_finger_tap'});
+            } else if (maxFingers === 4) {
+                socket.emit('gesture', {action: '4_finger_tap'});
             }
         } else if (isSwipe) {
+            // SWIPES
             if (maxFingers === 3) {
                 if (absY > absX) {
-                    if (diffY < 0) socket.emit('hotkey', {keys: ['win', 'tab']}); 
-                    else socket.emit('hotkey', {keys: ['win', 'd']}); 
+                    if (diffY < 0) socket.emit('gesture', {action: '3_finger_up'}); 
+                    else socket.emit('gesture', {action: '3_finger_down'}); 
                 } else {
-                    socket.emit('hotkey', {keys: ['alt', 'tab']});
+                    if (diffX < 0) socket.emit('gesture', {action: '3_finger_left'}); 
+                    else socket.emit('gesture', {action: '3_finger_right'});
                 }
             } else if (maxFingers === 4) {
-                if (absX > absY) {
-                    if (diffX < 0) socket.emit('hotkey', {keys: ['win', 'ctrl', 'right']}); 
-                    else socket.emit('hotkey', {keys: ['win', 'ctrl', 'left']});
+                if (absY > absX) {
+                    if (diffY < 0) socket.emit('gesture', {action: '4_finger_up'}); 
+                    else socket.emit('gesture', {action: '4_finger_down'}); 
+                } else {
+                    if (diffX < 0) socket.emit('gesture', {action: '4_finger_left'}); 
+                    else socket.emit('gesture', {action: '4_finger_right'});
                 }
             }
         }
+        
+        // Reset states
         maxFingers = 0;
         initialTouches = [];
     }

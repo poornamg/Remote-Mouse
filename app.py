@@ -15,6 +15,32 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # Disable failsafe to prevent crashes if mouse hits the screen corner
 pyautogui.FAILSAFE = False
 
+import json
+import os
+
+CONFIG_FILE = 'config.json'
+
+def load_gestures():
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {
+            "3_finger_tap": ["playpause"],
+            "3_finger_up": ["volumeup"],
+            "3_finger_down": ["volumedown"],
+            "3_finger_left": ["alt", "shift", "tab"],
+            "3_finger_right": ["alt", "tab"],
+            "4_finger_tap": ["win", "a"],
+            "4_finger_up": ["win", "shift", "m"],
+            "4_finger_down": ["win", "m"],
+            "4_finger_left": ["win", "ctrl", "right"],
+            "4_finger_right": ["win", "ctrl", "left"]
+        }
+
+# Load settings when server starts
+GESTURES = load_gestures()
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -63,6 +89,15 @@ def handle_hotkey(data):
     try:
         keys = data.get('keys', [])
         pyautogui.hotkey(*keys)
+    except Exception:
+        pass
+
+@socketio.on('gesture')
+def handle_gesture(data):
+    try:
+        action = data.get('action')
+        if action in GESTURES:
+            pyautogui.hotkey(*GESTURES[action])
     except Exception:
         pass
 
