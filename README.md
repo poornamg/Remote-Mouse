@@ -5,7 +5,6 @@ A modular, highly polished remote touchpad and keyboard for Windows, built with 
 ## Features
 * **Zero-Lag Input:** Uses WebSockets for real-time cursor tracking.
 * **Windows Gestures:** Maps 2, 3, and 4-finger swipes to native Windows shortcuts (Task View, Virtual Desktops, Alt-Tab).
-* **Physics-Based UI:** Features critically damped spring animations for menus and buttons.
 * **Instant Pairing:** Generates a QR code in the terminal on startup for instant phone connection.
 * **Wake Lock:** Prevents the mobile browser from sleeping while in use.
 
