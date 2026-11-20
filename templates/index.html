@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Touchpad</title>
+    <!-- Link to the separated CSS file -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    
+    <div id="start-overlay">
+        <button class="natural-btn start-btn" id="startBtn">Connect</button>
+    </div>
+
+    <!-- Main View -->
+    <div id="touchpad-container"></div>
+    <button id="openMenuBtn">☰</button>
+
+    <!-- Full Screen Menu -->
+    <div id="fullScreenMenu">
+        
+        <!-- 1. Cross Button Top Right -->
+        <div class="menu-top-row menu-item">
+            <button id="closeMenuBtn">✕</button>
+        </div>
+        
+        <!-- 2. Rotate and Exit -->
+        <div class="menu-action-row menu-item">
+            <button class="natural-btn header-btn" onclick="toggleRotation()">Rotate Screen</button>
+            <button class="natural-btn hold-exit-btn" id="exitBtn">
+                <div class="fill" id="exitFill"></div>
+                <span class="text">Hold to Exit</span>
+            </button>
+        </div>
+        
+        <!-- 3. Keyboard Input -->
+        <div class="menu-input-row menu-item">
+            <input type="text" id="keyboardInput" placeholder="Tap to type..." autocomplete="off">
+        </div>
+        
+        <!-- 4. Media Buttons -->
+        <div class="menu-media-row menu-item">
+            <button class="natural-btn large-btn" onclick="sendKey('left')">⏮</button>
+            <button class="natural-btn large-btn" onclick="sendKey('playpause')">⏯</button>
+            <button class="natural-btn large-btn" onclick="sendKey('right')">⏭</button>
+        </div>
+        
+    </div>
+
+    <!-- Socket.IO and your separated JS file -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
